@@ -6,7 +6,7 @@ import sys
 import numpy as np
 import tensorflow as tf
 from batch_functions import provide_batch
-from architecture_ed import inference
+from architecture import inference
 from datetime import datetime
 
 # All the parameters:
@@ -24,7 +24,7 @@ nb_epochs_decay_learning_rate = 25
 weights_decay = 0
 
 restore_saved_model = False
-dir_logs = './logs'
+dir_logs = './logs_4tree'
 per_process_gpu_memory_fraction = 0.2
 
 txt_file = open('results.txt', 'w')

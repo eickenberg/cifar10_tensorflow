@@ -10,6 +10,7 @@ from tensorflow.contrib.layers.python.layers import initializers
 from tensorflow.python.ops import init_ops
 from tensorflow.python.training import moving_averages
 from tensorflow.python.framework import ops
+from haar import tree_conv
 
 from grid_filters import make_grid
 
@@ -54,6 +55,22 @@ def convolution(name_scope, inputs, nb_channels_output, k, s, p):
         outputs = tf.nn.conv2d(padded_inputs, weights, [1, s, s, 1], padding='VALID')
     return outputs
 
+def tree_convolution(name_scope, inputs, nb_channels_output, k, s, p):
+    with tf.variable_scope(name_scope):
+        dtype = inputs.dtype.base_dtype
+        nb_channels_input = utils.last_dimension(inputs.get_shape(), min_rank=4)
+        kernel_h, kernel_w = utils.two_element_tuple(k)
+        weights_shape = [kernel_h, kernel_w, nb_channels_input, nb_channels_output]
+        msr_init_std = np.sqrt(2 / (kernel_h * kernel_w * nb_channels_output))
+        weights_init = tf.random_normal(weights_shape, mean=0, stddev=msr_init_std, dtype=dtype)
+        weights = tf.get_variable('weights', initializer=weights_init)
+        if (nb_channels_input == 1) or (nb_channels_input == 3):
+            grid = make_grid(weights)
+            tf.image_summary(tf.get_default_graph().unique_name('Filters', mark_as_used=False), grid)
+        padded_inputs = tf.pad(inputs, [[0, 0], [p, p], [p, p], [0, 0]], 'CONSTANT')
+        outputs = tree_conv(padded_inputs, weights, strides=(s, s), padding='VALID')
+    return outputs
+
 
 def linear(name_scope, inputs, nb_output_channels):
     with tf.variable_scope(name_scope):
@@ -74,13 +91,24 @@ def layer(name_scope, inputs, nb_channels_output, k, s, p, is_training=True):
         outputs = nn.relu(outputs)
     return outputs
 
+def tree_layer(name_scope, inputs, nb_channels_output, k, s, p, is_training=True):
+    with tf.variable_scope(name_scope):
+        outputs = tree_convolution('tree_conv', inputs, nb_channels_output, k, s, p)
+        outputs = batch_norm('bn', outputs, is_training=is_training)
+        outputs = nn.relu(outputs)
+        print ('tree layer here')
+    return outputs
+
 
 def inference(inputs, is_training):
-    outputs = layer('l1', inputs, nb_channels_output=36, k=5, s=1, p=2, is_training=is_training)
-    # outputs = layer('l2', outputs, nb_channels_output=64, k=5, s=1, p=2, is_training=is_training)
-    outputs = layer('l3', outputs, nb_channels_output=36, k=2, s=2, p=0, is_training=is_training)
-    outputs = layer('l4', outputs, nb_channels_output=72, k=3, s=1, p=1, is_training=is_training)
-    # outputs = layer('l5', outputs, nb_channels_output=128, k=3, s=1, p=1, is_training=is_training)
+    outputs = tree_layer('l1', inputs, nb_channels_output=36, k=5, s=1, p=2, is_training=is_training)
+    # print(outputs.get_shape())
+    # outputs = layer('l1', inputs, nb_channels_output=36, k=5, s=1, p=2, is_training=is_training)
+    # print(outputs.get_shape())
+    outputs = tree_layer('l2', outputs, nb_channels_output=64, k=5, s=1, p=2, is_training=is_training)
+    outputs = tree_layer('l3', outputs, nb_channels_output=36, k=2, s=2, p=0, is_training=is_training)
+    outputs = tree_layer('l4', outputs, nb_channels_output=72, k=3, s=1, p=1, is_training=is_training)
+    outputs = layer('l5', outputs, nb_channels_output=128, k=3, s=1, p=1, is_training=is_training)
     outputs = layer('l6', outputs, nb_channels_output=72, k=2, s=2, p=0, is_training=is_training)
     outputs = nn.avg_pool(outputs, ksize=[1, 8, 8, 1], strides=[1, 1, 1, 1], padding='VALID')
     outputs = tf.squeeze(outputs, squeeze_dims=[1, 2])
